@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Кальян-клуб — Admin WebApp</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;padding:12px}
+    .card{border:1px solid #ddd;padding:10px;margin:8px 0;border-radius:8px}
+    input,select,textarea{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #ccc}
+    button{padding:10px 12px;border-radius:8px;border:none;background:#2b6cb0;color:white;cursor:pointer}
+    .row{display:flex;gap:8px}
+    .col{flex:1}
+  </style>
+</head>
+<body>
+  <h2>Admin WebApp — Kalyan</h2>
+  <div class="card">
+    <h3>Добавить продукт</h3>
+    <select id="p_category">
+      <option value="kalyan">Кальян</option>
+      <option value="drink">Напиток</option>
+      <option value="snack">Перекус</option>
+    </select>
+    <input id="p_name" placeholder="Название"/>
+    <input id="p_price" type="number" placeholder="Цена"/>
+    <textarea id="p_desc" placeholder="Описание"></textarea>
+    <button onclick="addProduct()">Добавить продукт</button>
+    <div id="add_res"></div>
+  </div>
+
+  <div class="card">
+    <h3>Создать заказ</h3>
+    <input id="table_number" placeholder="Номер стола"/>
+    <button onclick="loadProducts()">Загрузить продукты</button>
+    <div id="products_list"></div>
+    <h4>Текущий заказ</h4>
+    <div id="current_items"></div>
+    <button onclick="createOrder()">Создать заказ</button>
+  </div>
+
+  <script>
+    const API = window.location.origin + '/api';
+    let products = [];
+    let current = [];
+
+    function show(msg){
+      alert(msg);
+    }
+
+    async function addProduct(){
+      const name = document.getElementById('p_name').value;
+      const category = document.getElementById('p_category').value;
+      const price = parseFloat(document.getElementById('p_price').value || 0);
+      const desc = document.getElementById('p_desc').value;
+      if(!name){ show('Введите имя'); return; }
+      const res = await fetch(API + '/add_product', {
+        method: 'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name,category,description:desc,price})
+      });
+      const data = await res.json();
+      document.getElementById('add_res').innerText = 'Добавлен id=' + data.id;
+      loadProducts();
+    }
+
+    async function loadProducts(){
+      const res = await fetch(API + '/products');
+      products = await res.json();
+      const box = document.getElementById('products_list');
+      box.innerHTML = '';
+      products.forEach(p=>{
+        const div = document.createElement('div');
+        div.innerHTML = `<b>${p.name}</b> — ${p.category} — ${p.price} <button onclick='addToCurrent(${p.id})'>+</button>`;
+        box.appendChild(div);
+      });
+    }
+
+    function addToCurrent(pid){
+      const p = products.find(x=>x.id===pid);
+      if(!p) return;
+      const existing = current.find(x=>x.product_id===pid);
+      if(existing){ existing.quantity += 1; } else { current.push({product_id:pid, name:p.name, quantity:1, price:p.price}); }
+      renderCurrent();
+    }
+    function renderCurrent(){
+      const box = document.getElementById('current_items');
+      box.innerHTML = '';
+      current.forEach((it, idx)=>{
+        const div = document.createElement('div');
+        div.innerHTML = `${it.name} x${it.quantity} — ${it.price * it.quantity} <button onclick='inc(${idx})'>+</button> <button onclick='dec(${idx})'>-</button>`;
+        box.appendChild(div);
+      });
+    }
+    function inc(i){ current[i].quantity += 1; renderCurrent(); }
+    function dec(i){ current[i].quantity -= 1; if(current[i].quantity<=0) current.splice(i,1); renderCurrent(); }
+
+    async function createOrder(){
+      const table_number = document.getElementById('table_number').value || '0';
+      if(current.length === 0){ show('Позиции пусты'); return; }
+      const res = await fetch(API + '/create_order', {
+        method: 'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({table_number, items: current})
+      });
+      const data = await res.json();
+      if(window.Telegram && Telegram.WebApp){
+        Telegram.WebApp.sendData(JSON.stringify({action:'create_order', table_number, items: current}));
+      }
+      show('Создан заказ id=' + data.order_id);
+      current = [];
+      renderCurrent();
+    }
+
+    (function init(){
+      if(window.Telegram && Telegram.WebApp){
+        Telegram.WebApp.expand();
+      }
+    })();
+  </script>
+</body>
+</html>
